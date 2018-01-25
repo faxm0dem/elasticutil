@@ -1,0 +1,69 @@
+#!/bin/bash -eu
+
+CURL='curl -s -H "Content-Type: application/json"'
+ES_URL="http://localhost:9200"
+DATE=$(date +%Y.%m.%d)
+INDEX_PREFIX=syslog-
+QUERY=${1:-*}
+
+quit() {
+  echo " Exiting on user input" 1>&2
+  exit 0
+}
+
+tsize() {
+  lines=$(tput lines)
+  lines=$((lines - 1))
+  cols=$(tput cols)
+}
+
+if [ -t 1 ] ; then
+	tsize
+  ready() {
+    echo -e "\033[1;1f"
+    echo "$@" | cut -c 1-$cols
+    read -n1 -s -p "Press 'q|Q|x|X' to exit or any key to continue" input
+    case $input in
+      q|Q|x|X) quit;;
+      default) break;;
+    esac
+  }
+else
+  lines=500
+  ready() {
+    echo "$@"
+  }
+fi
+
+req=$($CURL "${ES_URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d'
+  {
+    "query": {
+      "query_string" : {
+        "query" : "'${QUERY}'"
+      }
+    },
+    "size": '${lines}',
+    "sort": [
+      {
+        "@timestamp": {
+          "order": "desc"
+        }
+      }
+    ]
+  }'
+)
+hits=$(echo $req | jq -r '.hits.hits')
+nhits=$(echo $hits | jq '. | length')
+
+while [ $nhits -gt 0 ]; do
+	if [ -t 1 ]; then
+		tsize
+	fi
+  scroll_id=$(echo $req | jq -r ._scroll_id || echo NOK)
+  hits=$(echo $req | jq -r '.hits.hits')
+  [ "$hits" == "null" ] && (echo Unexpected end of scroll output $req 1>&2; exit 2)
+  nhits=$(echo $hits | jq '. | length')
+  ready "$(echo $hits | jq -r '.[]._source | "\(."@timestamp") \(.host) \(.service) \(.message)"')"
+  req=$($CURL ${ES_URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
+done
+
