@@ -1,0 +1,63 @@
+#!/bin/bash -eu
+
+debug() {
+  if [ -n "${KB_DEBUG:-}" ]; then
+    echo $@ 1>&2
+  fi
+}
+
+err() {
+  echo $@ 1>&2
+	exit 2
+}
+
+KB_OUTDIR=${1:-.}
+KB_SIZE=${2:-100}
+KB_INDEX_PREFIX=${3:-.kibana}
+KB_QUERY_STRING=${4:-*}
+KB_CRT=${5:-crt.pem}
+KB_KEY=${6:-key.pem}
+KB_URL=${7:-http://localhost:9200}
+
+if [ -z "${KB_CURL_OPTS:-}" ]; then
+  KB_CURL_OPTS=(-s --key "$KB_KEY" --cert "$KB_CRT")
+fi
+
+KIBANA_INDICES_FULL=$(/usr/bin/curl -f "${KB_CURL_OPTS[@]}" ${KB_URL}/_cat/indices/${KB_INDEX_PREFIX}* || err "Curl Failed" 1>&2)
+if [ -z "$KIBANA_INDICES_FULL" ]; then
+	err "No Kibana indices found"
+fi
+KIBANA_INDICES=$(echo "$KIBANA_INDICES_FULL" | /usr/bin/awk '{print $3}')
+
+for index in $KIBANA_INDICES; do
+  outfile=${KB_OUTDIR}/${index}.json
+  debug -n "$index → $outfile "
+  if [ -e $outfile ]; then
+    rm $outfile
+  fi
+    
+  req=$(curl "${KB_CURL_OPTS[@]}" "${KB_URL}/${index}/_search?scroll=1m" -d'
+    {
+      "query": {
+        "query_string" : {
+          "query" : "'${KB_QUERY_STRING}'"
+        }
+      },
+      "size": '$KB_SIZE'
+    }'
+  )
+  hits=$(echo $req | jq -r '.hits.hits')
+  nhits=$(echo $hits | jq '. | length')
+  
+  while [ $nhits -gt 0 ]; do
+    scroll_id=$(echo $req | jq -r ._scroll_id || echo NOK)
+    hits=$(echo $req | jq -r '.hits.hits')
+    [ "$hits" == "null" ] && (echo Unexpected end of scroll output $req 1>&2; exit 2)
+    nhits=$(echo $hits | jq '. | length')
+    [ $nhits -gt 0 ] && echo $hits >> $outfile
+    req=$(curl "${KB_CURL_OPTS[@]}" ${KB_URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
+    debug -n "."
+  done
+  debug ""
+done 
+

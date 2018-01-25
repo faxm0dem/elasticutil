@@ -1,0 +1,30 @@
+#!/bin/bash -eu
+
+KB_DEBUG=1
+debug() {
+  if [ -n "${KB_DEBUG:-}" ]; then
+    echo $@ 1>&2
+  fi
+}
+
+err() {
+  echo $@ 1>&2
+	exit 2
+}
+
+KB_INFILE=${1}
+KB_URL=${2:-http://localhost:9200}
+KB_CRT=${3:-crt.pem}
+KB_KEY=${4:-key.pem}
+
+if [ -z "${KB_CURL_OPTS:-}" ]; then
+  KB_CURL_OPTS=(-H "Content-Type: application/x-ndjson" --key "$KB_KEY" --cert "$KB_CRT")
+fi
+
+DATA=$(jq -r '.[] | "{\"index\": {\"_index\":\""+._index+"\",\"_type\":\""+._type+"\",\"_id\":\""+._id+"\"}}\n"+(._source | tostring)' < $KB_INFILE)
+
+#echo "$DATA"; exit 0
+
+req=$(curl "${KB_CURL_OPTS[@]}" "${KB_URL}/_bulk" -d"$DATA")
+debug $req | jq .
+
