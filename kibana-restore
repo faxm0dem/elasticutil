@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-KB_DEBUG=1
+KB_DEBUG=""
 debug() {
   if [ -n "${KB_DEBUG:-}" ]; then
     echo $@ 1>&2
@@ -21,10 +21,13 @@ if [ -z "${KB_CURL_OPTS:-}" ]; then
   KB_CURL_OPTS=(-H "Content-Type: application/x-ndjson" --key "$KB_KEY" --cert "$KB_CRT")
 fi
 
-DATA=$(jq -r '.[] | "{\"index\": {\"_index\":\""+._index+"\",\"_type\":\""+._type+"\",\"_id\":\""+._id+"\"}}\n"+(._source | tostring)' < $KB_INFILE)
+TMPFILE=$(mktemp)
+debug tempfile $TMPFILE created
+jq -r '.[] | "{\"index\": {\"_index\":\""+._index+"\",\"_type\":\""+._type+"\",\"_id\":\""+._id+"\"}}\n"+(._source | tostring)' < $KB_INFILE > $TMPFILE
 
-#echo "$DATA"; exit 0
-
-req=$(curl "${KB_CURL_OPTS[@]}" "${KB_URL}/_bulk" -d"$DATA")
+req=$(curl "${KB_CURL_OPTS[@]}" "${KB_URL}/_bulk" --data-binary @$TMPFILE)
 debug $req | jq .
+
+rm $TMPFILE
+debug tempfile $TMPFILE deleted
 
