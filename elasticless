@@ -1,9 +1,17 @@
 #!/bin/bash -eu
 
-CURL='curl -s -H "Content-Type: application/json"'
-ES_URL="http://localhost:9200"
-DATE=$(date +%Y.%m.%d)
-INDEX_PREFIX=syslog-
+if [ -n "${EL_CURL_OPTS:-}" ]; then
+  CURL=(curl -s -H "Content-Type: application/json" $EL_CURL_OPTS)
+else
+  CURL=(curl -s -H "Content-Type: application/json")
+fi
+if [ -n "${EL_DATE:-}" ]; then
+  DATE=$EL_DATE
+else
+	DATE=$(date +%Y.%m.%d)
+fi
+INDEX_PREFIX=${EL_INDEX_PREFIX:-syslog-}
+URL=${EL_URL:-http://localhost:9200}
 QUERY=${1:-*}
 
 quit() {
@@ -35,7 +43,7 @@ else
   }
 fi
 
-req=$($CURL "${ES_URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d'
+req=$("${CURL[@]}" "${URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d'
   {
     "query": {
       "query_string" : {
@@ -64,6 +72,6 @@ while [ $nhits -gt 0 ]; do
   [ "$hits" == "null" ] && (echo Unexpected end of scroll output $req 1>&2; exit 2)
   nhits=$(echo $hits | jq '. | length')
   ready "$(echo $hits | jq -r '.[]._source | "\(."@timestamp") \(.host) \(.service) \(.message)"')"
-  req=$($CURL ${ES_URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
+  req=$($CURL ${URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
 done
 
