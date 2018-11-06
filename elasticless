@@ -8,7 +8,7 @@ fi
 if [ -n "${EL_DATE:-}" ]; then
   DATE=$EL_DATE
 else
-	DATE=$(date +%Y.%m.%d)
+	DATE=$(date +${EL_DATE_FMT:-%Y.%m.%d})
 fi
 INDEX_PREFIX=${EL_INDEX_PREFIX:-syslog-}
 URL=${EL_URL:-http://localhost:9200}
@@ -72,6 +72,6 @@ while [ $nhits -gt 0 ]; do
   [ "$hits" == "null" ] && (echo Unexpected end of scroll output $req 1>&2; exit 2)
   nhits=$(echo $hits | jq '. | length')
   ready "$(echo $hits | jq -r '.[]._source | "\(."@timestamp") \(.host) \(.service) \(.message)"')"
-  req=$($CURL ${URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
+  req=$("${CURL[@]}" ${URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
 done
 
