@@ -11,6 +11,8 @@ else
 	DATE=$(date +${EL_DATE_FMT:-%Y.%m.%d})
 fi
 INDEX_PREFIX=${EL_INDEX_PREFIX:-syslog-}
+RAW_OUTPUT=${EL_RAW_OUTPUT:-}
+BATCH_SIZE=${EL_BATCH_SIZE:-500}
 URL=${EL_URL:-http://localhost:9200}
 QUERY=${1:-*}
 
@@ -37,7 +39,7 @@ if [ -t 1 ] ; then
     esac
   }
 else
-  lines=500
+  lines=$BATCH_SIZE
   ready() {
     echo "$@"
   }
@@ -71,7 +73,11 @@ while [ $nhits -gt 0 ]; do
   hits=$(echo $req | jq -r '.hits.hits')
   [ "$hits" == "null" ] && (echo Unexpected end of scroll output $req 1>&2; exit 2)
   nhits=$(echo $hits | jq '. | length')
-  ready "$(echo $hits | jq -r '.[]._source | "\(."@timestamp") \(.host) \(.service) \(.message)"')"
+	if [ -n "$RAW_OUTPUT" ]; then
+		ready $hits
+	else
+    ready "$(echo $hits | jq -r '.[]._source | "\(."@timestamp") \(.host) \(.service) \(.message)"')"
+  fi
   req=$("${CURL[@]}" ${URL}/_search/scroll -d '{"scroll":"1m","scroll_id":"'$scroll_id'"}')
 done
 
