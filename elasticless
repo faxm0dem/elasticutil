@@ -43,7 +43,7 @@ else
   }
 fi
 
-req=$("${CURL[@]}" "${URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d'
+q='
   {
     "query": {
       "query_string" : {
@@ -59,7 +59,7 @@ req=$("${CURL[@]}" "${URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d'
       }
     ]
   }'
-)
+req=$("${CURL[@]}" "${URL}/${INDEX_PREFIX}${DATE}/_search?scroll=1m" -d@<(echo $q))
 hits=$(echo $req | jq -r '.hits.hits')
 nhits=$(echo $hits | jq '. | length')
 
